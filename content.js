@@ -33,43 +33,62 @@ function scrapeWhatsAppLinks() {
             // Try to find a preview image near the link
             let image = null;
             let parent = a.parentElement;
+            let container = null;
             let attempts = 0;
 
-            // 1. Look for direct images or background images in ancestry
-            while (parent && attempts < 5) {
-                // Check direct img tags
-                const imgs = parent.querySelectorAll('img');
-                for (let img of imgs) {
-                    // Skip tiny icons, look for decent size
-                    if (img.width > 40 && img.height > 40) {
-                        image = img.src;
-                        break;
-                    }
-                }
+            // 1. Identify a likely container (Card, Item, or List Element)
+            while (parent && attempts < 6) {
+                const tag = parent.tagName.toLowerCase();
+                const cls = parent.className ? parent.className.toString().toLowerCase() : "";
 
-                // Check background images
-                if (!image) {
-                    const style = window.getComputedStyle(parent);
-                    if (style.backgroundImage && style.backgroundImage !== 'none') {
-                        const match = style.backgroundImage.match(/url\(["']?([^"']*)["']?\)/);
-                        if (match) image = match[1];
-                    }
+                // Common container markers
+                if (tag === 'article' || tag === 'li' ||
+                    cls.includes('card') || cls.includes('item') || cls.includes('box') ||
+                    cls.includes('entry') || cls.includes('post') ||
+                    (parent.style.border && parent.style.border !== 'none') ||
+                    (parent.style.boxShadow && parent.style.boxShadow !== 'none')) {
+                    container = parent;
+                    break;
                 }
-
-                if (image) break;
                 parent = parent.parentElement;
                 attempts++;
             }
 
-            // 2. If still no image, look for images in previous sibling (common in list layouts)
-            if (!image && a.parentElement) {
-                let sibling = a.parentElement.previousElementSibling;
-                if (sibling) {
-                    const siblingImgs = sibling.querySelectorAll('img');
-                    for (let img of siblingImgs) {
-                        if (img.width > 40 && img.height > 40) {
-                            image = img.src;
+            // Fallback: if no specific container found, use the 3rd parent (heuristic)
+            if (!container && a.parentElement && a.parentElement.parentElement) {
+                container = a.parentElement.parentElement.parentElement;
+            } else if (!container) {
+                container = a.parentElement; // Worst case
+            }
+
+            // 2. Search for images within the container
+            if (container) {
+                // Check all images
+                const imgs = container.querySelectorAll('img');
+                for (let img of imgs) {
+                    // Check various sources for lazy loading
+                    const src = img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('data-original');
+
+                    if (src && !src.includes('data:image/svg') && !src.includes('base64')) {
+                        // Accept if reasonable size OR if it looks like a profile/group icon
+                        if ((img.width > 30 && img.height > 30) || (img.className.includes('avatar') || img.className.includes('icon'))) {
+                            image = src;
                             break;
+                        }
+                    }
+                }
+
+                // Check background image on container or children
+                if (!image) {
+                    const elems = [container, ...container.querySelectorAll('div, span, a')];
+                    for (let el of elems) {
+                        const style = window.getComputedStyle(el);
+                        if (style.backgroundImage && style.backgroundImage !== 'none') {
+                            const match = style.backgroundImage.match(/url\(["']?([^"']*)["']?\)/);
+                            if (match && match[1] && !match[1].includes('gradient')) {
+                                image = match[1];
+                                break;
+                            }
                         }
                     }
                 }
