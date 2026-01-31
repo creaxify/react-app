@@ -90,10 +90,27 @@ function scrapeWhatsAppLinks() {
                 bestContainer = a.parentElement.parentElement;
             }
 
-            // 4. Extract Image
+            // 4. Extract Name (If default is generic)
+            const genericTerms = ['join chat', 'join group', 'whatsapp group', 'link', 'group invite'];
+            if (genericTerms.some(term => name.toLowerCase().includes(term)) && bestContainer) {
+                // Look for headings or bold text in the container
+                const candidates = bestContainer.querySelectorAll('h1, h2, h3, h4, h5, h6, strong, .title, .name');
+                let bestName = name;
+
+                for (let candidate of candidates) {
+                    const text = candidate.innerText.trim();
+                    if (text && text.length > 3 && text.length < 50 && !genericTerms.some(t => text.toLowerCase().includes(t))) {
+                        bestName = text;
+                        break; // Take the first valid heading found
+                    }
+                }
+                name = bestName;
+            }
+
+            // 5. Extract Image
             let image = findImageInContainer(bestContainer);
 
-            // 5. Fallback: Check previous sibling (common in lists: [Img] [Details])
+            // 6. Fallback: Check previous sibling (common in lists: [Img] [Details])
             if (!image && bestContainer && bestContainer.previousElementSibling) {
                 image = findImageInContainer(bestContainer.previousElementSibling);
             }
