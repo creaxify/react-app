@@ -8,6 +8,9 @@
         "activeTab",
         "scripting"
     ],
+    "host_permissions": [
+        "*://creaxify.github.io/*"
+    ],
     "action": {
         "default_popup": "popup.html",
         "default_title": "Grab Links"
