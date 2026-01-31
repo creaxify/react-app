@@ -34,35 +34,45 @@ function scrapeWhatsAppLinks() {
             let image = null;
             let parent = a.parentElement;
             let attempts = 0;
-            // Search up to 6 levels up to find a container
-            while (parent && attempts < 6) {
-                // Check for img tags
+
+            // 1. Look for direct images or background images in ancestry
+            while (parent && attempts < 5) {
+                // Check direct img tags
                 const imgs = parent.querySelectorAll('img');
                 for (let img of imgs) {
-                    if (img.width > 30 && img.height > 30) {
+                    // Skip tiny icons, look for decent size
+                    if (img.width > 40 && img.height > 40) {
                         image = img.src;
                         break;
                     }
                 }
-                // Check for divs with background image
+
+                // Check background images
                 if (!image) {
-                    const divs = parent.querySelectorAll('div, span');
-                    for (let div of divs) {
-                        const style = window.getComputedStyle(div);
-                        if (style.backgroundImage && style.backgroundImage !== 'none') {
-                            // Extract url(...)
-                            const match = style.backgroundImage.match(/url\(["']?([^"']*)["']?\)/);
-                            if (match) {
-                                image = match[1];
-                                break;
-                            }
-                        }
+                    const style = window.getComputedStyle(parent);
+                    if (style.backgroundImage && style.backgroundImage !== 'none') {
+                        const match = style.backgroundImage.match(/url\(["']?([^"']*)["']?\)/);
+                        if (match) image = match[1];
                     }
                 }
 
                 if (image) break;
                 parent = parent.parentElement;
                 attempts++;
+            }
+
+            // 2. If still no image, look for images in previous sibling (common in list layouts)
+            if (!image && a.parentElement) {
+                let sibling = a.parentElement.previousElementSibling;
+                if (sibling) {
+                    const siblingImgs = sibling.querySelectorAll('img');
+                    for (let img of siblingImgs) {
+                        if (img.width > 40 && img.height > 40) {
+                            image = img.src;
+                            break;
+                        }
+                    }
+                }
             }
 
             links.push({
