@@ -1,0 +1,20 @@
+{
+    "manifest_version": 3,
+    "name": "WhatsApp Link Grabber",
+    "version": "1.0",
+    "description": "Collect WhatsApp group links and view them in a premium dashboard.",
+    "permissions": [
+        "storage",
+        "activeTab",
+        "scripting"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "Grab Links"
+    },
+    "icons": {
+        "16": "vite.svg",
+        "48": "vite.svg",
+        "128": "vite.svg"
+    }
+}
