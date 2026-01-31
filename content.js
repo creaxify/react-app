@@ -94,6 +94,15 @@ function scrapeWhatsAppLinks() {
                 }
             }
 
+            // Ensure absolute URL
+            if (image && !image.startsWith('http') && !image.startsWith('data:')) {
+                try {
+                    image = new URL(image, document.baseURI).href;
+                } catch (e) {
+                    image = null;
+                }
+            }
+
             links.push({
                 url: url,
                 name: name,
@@ -103,6 +112,7 @@ function scrapeWhatsAppLinks() {
         }
     });
 
+    console.log(`[Scraper] Found ${links.length} links. Images found: ${links.filter(l => l.image).length}`);
     return links;
 }
 

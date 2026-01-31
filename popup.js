@@ -53,11 +53,12 @@ document.getElementById('grabBtn').addEventListener('click', async () => {
                         // Simple de-duplication by URL
                         const existingUrls = new Set(existing.map(l => l.url));
                         const uniqueNew = newLinks.filter(l => !existingUrls.has(l.url));
+                        const withImages = newLinks.filter(l => l.image).length;
 
                         const updated = [...existing, ...uniqueNew];
 
                         chrome.storage.local.set({ whatsappLinks: updated }, () => {
-                            status.textContent = `Found ${count} links! (${uniqueNew.length} new)`;
+                            status.textContent = `Found ${count} links! (${withImages} with images)`;
                         });
                     });
                 }
