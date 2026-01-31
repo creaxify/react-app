@@ -68,51 +68,75 @@ function scrapeWhatsAppLinks() {
                 name = "WhatsApp Group";
             }
 
-            // 3. Find Card Container (Heuristic: Look up 4 levels)
+            // 3. Find Card Container (Visual Proximity Strategy)
             let container = a.parentElement;
             let bestContainer = null;
 
-            for (let i = 0; i < 4; i++) {
-                if (!container) break;
-                const cls = (container.className || "").toString().toLowerCase();
-                const tag = container.tagName.toLowerCase();
+            // Go up until we find a block that looks like a card (has multiple children or is a list item)
+            for (let i = 0; i < 6; i++) {
+                if (!container || container.tagName === 'BODY') break;
 
-                // High confidence markers
-                if (cls.includes('card') || cls.includes('item') || cls.includes('box') || tag === 'li' || tag === 'article') {
+                // If this element has an image AND text, it's a strong candidate
+                if (container.querySelector('img') && container.innerText.length > 10) {
+                    bestContainer = container;
+                }
+
+                // Special case: list items or articles are almost always the container
+                if (container.tagName === 'LI' || container.tagName === 'ARTICLE' || container.style.border || container.style.boxShadow) {
                     bestContainer = container;
                     break;
                 }
+
                 container = container.parentElement;
             }
 
-            // Fallback to a mid-level parent if no marker found
+            // Fallback: Just use the 3rd parent (usually safe for grid layotus)
             if (!bestContainer && a.parentElement && a.parentElement.parentElement) {
-                bestContainer = a.parentElement.parentElement;
+                bestContainer = a.parentElement.parentElement.parentElement;
             }
 
-            // 4. Extract Name (If default is generic)
-            const genericTerms = ['join chat', 'join group', 'whatsapp group', 'link', 'group invite'];
-            if (genericTerms.some(term => name.toLowerCase().includes(term)) && bestContainer) {
-                // Look for headings or bold text in the container
-                const candidates = bestContainer.querySelectorAll('h1, h2, h3, h4, h5, h6, strong, .title, .name');
-                let bestName = name;
+            // 4. Extract Name (Aggressive Text Analysis)
+            const genericTerms = ['join chat', 'join group', 'whatsapp group', 'link', 'group invite', 'follow'];
+            const isGeneric = (n) => !n || genericTerms.some(term => n.toLowerCase().includes(term)) || n.length < 3;
 
-                for (let candidate of candidates) {
-                    const text = candidate.innerText.trim();
-                    if (text && text.length > 3 && text.length < 50 && !genericTerms.some(t => text.toLowerCase().includes(t))) {
-                        bestName = text;
-                        break; // Take the first valid heading found
+            if (isGeneric(name) && bestContainer) {
+                // Get all text nodes or block elements
+                const lines = bestContainer.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+                // Prioritize lines that:
+                // 1. Are NOT the URL
+                // 2. Are NOT generic terms
+                // 3. Are reasonably short (likely a title)
+                for (let line of lines) {
+                    if (!line.includes('http') && !isGeneric(line) && line.length < 60) {
+                        name = line;
+                        break;
                     }
                 }
-                name = bestName;
             }
 
-            // 5. Extract Image
+            // 5. Extract Image (Deep Search)
             let image = findImageInContainer(bestContainer);
 
-            // 6. Fallback: Check previous sibling (common in lists: [Img] [Details])
-            if (!image && bestContainer && bestContainer.previousElementSibling) {
-                image = findImageInContainer(bestContainer.previousElementSibling);
+            // 6. Last Resort: Look for ANY image near this link in the DOM tree
+            if (!image && bestContainer) {
+                // Check closest image relative to the link (up or down siblings)
+                const allImages = [...document.querySelectorAll('img')];
+                // Sort by distance in DOM
+                const closest = allImages.sort((aImg, bImg) => {
+                    const distA = Math.abs(aImg.getBoundingClientRect().top - a.getBoundingClientRect().top);
+                    const distB = Math.abs(bImg.getBoundingClientRect().top - a.getBoundingClientRect().top);
+                    return distA - distB;
+                })[0];
+
+                if (closest) {
+                    // Only accept if it's visually close (within 300px)
+                    const dist = Math.abs(closest.getBoundingClientRect().top - a.getBoundingClientRect().top);
+                    if (dist < 300 && closest.width > 40) {
+                        const src = closest.currentSrc || closest.src;
+                        if (src) image = getAbsoluteUrl(src);
+                    }
+                }
             }
 
             links.push({
