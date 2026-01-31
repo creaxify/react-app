@@ -72,69 +72,101 @@ function scrapeWhatsAppLinks() {
             let container = a.parentElement;
             let bestContainer = null;
 
-            // Go up until we find a block that looks like a card (has multiple children or is a list item)
+            // Go up until we find a block that looks like a card
             for (let i = 0; i < 6; i++) {
                 if (!container || container.tagName === 'BODY') break;
 
-                // If this element has an image AND text, it's a strong candidate
-                if (container.querySelector('img') && container.innerText.length > 10) {
+                // A container usually determines layout (grid/flex) or has a border/shadow
+                const style = window.getComputedStyle(container);
+                if (container.tagName === 'LI' || container.tagName === 'ARTICLE' ||
+                    style.borderWidth !== '0px' || style.boxShadow !== 'none' ||
+                    style.display === 'grid' || (style.display === 'flex' && container.innerText.length > 50)) {
                     bestContainer = container;
+                    // Keep going up one more level just in case we are in a 'content wrapper' inside the card
+                    // But if this one has an image, it's likely the one
+                    if (container.querySelector('img')) break;
                 }
-
-                // Special case: list items or articles are almost always the container
-                if (container.tagName === 'LI' || container.tagName === 'ARTICLE' || container.style.border || container.style.boxShadow) {
-                    bestContainer = container;
-                    break;
-                }
-
                 container = container.parentElement;
             }
 
-            // Fallback: Just use the 3rd parent (usually safe for grid layotus)
+            // Fallback: Use 3rd parent
             if (!bestContainer && a.parentElement && a.parentElement.parentElement) {
                 bestContainer = a.parentElement.parentElement.parentElement;
             }
 
-            // 4. Extract Name (Aggressive Text Analysis)
-            const genericTerms = ['join chat', 'join group', 'whatsapp group', 'link', 'group invite', 'follow'];
-            const isGeneric = (n) => !n || genericTerms.some(term => n.toLowerCase().includes(term)) || n.length < 3;
+            // 4. Extract Name (Visual Dominance Strategy)
+            // The Group Name is likely the text with the LARGEST font size in the container
+            if (bestContainer) {
+                const allElements = bestContainer.querySelectorAll('*');
+                let maxFontSize = 0;
+                let bestNameCandidates = [];
 
-            if (isGeneric(name) && bestContainer) {
-                // Get all text nodes or block elements
-                const lines = bestContainer.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                // generic terms to ignore
+                const genericTerms = ['join', 'chat', 'group', 'whatsapp', 'link', 'invite', 'share', 'follow'];
 
-                // Prioritize lines that:
-                // 1. Are NOT the URL
-                // 2. Are NOT generic terms
-                // 3. Are reasonably short (likely a title)
-                for (let line of lines) {
-                    if (!line.includes('http') && !isGeneric(line) && line.length < 60) {
-                        name = line;
-                        break;
+                allElements.forEach(el => {
+                    // Skip hidden or non-text elements
+                    if (!el.innerText || el.innerText.trim().length < 3) return;
+                    if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'NOSCRIPT') return;
+
+                    // Check direct text content of this node (approximate)
+                    const text = el.childNodes[0] && el.childNodes[0].nodeType === 3 ? el.childNodes[0].nodeValue.trim() : "";
+                    if (!text) return;
+
+                    if (genericTerms.some(t => text.toLowerCase().includes(t)) || text.includes('http')) return;
+
+                    const style = window.getComputedStyle(el);
+                    const fontSize = parseFloat(style.fontSize);
+
+                    if (fontSize > maxFontSize) {
+                        maxFontSize = fontSize;
+                        bestNameCandidates = [text];
+                    } else if (fontSize === maxFontSize) {
+                        bestNameCandidates.push(text);
                     }
+                });
+
+                if (bestNameCandidates.length > 0) {
+                    name = bestNameCandidates[0]; // Take the first largest text
                 }
             }
 
-            // 5. Extract Image (Deep Search)
-            let image = findImageInContainer(bestContainer);
+            // 5. Extract Image (Visual Dominance Strategy)
+            // The preview image is likely the LARGEST image in the container
+            let image = null;
+            if (bestContainer) {
+                const imgs = bestContainer.querySelectorAll('img');
+                let maxArea = 0;
 
-            // 6. Last Resort: Look for ANY image near this link in the DOM tree
-            if (!image && bestContainer) {
-                // Check closest image relative to the link (up or down siblings)
-                const allImages = [...document.querySelectorAll('img')];
-                // Sort by distance in DOM
-                const closest = allImages.sort((aImg, bImg) => {
-                    const distA = Math.abs(aImg.getBoundingClientRect().top - a.getBoundingClientRect().top);
-                    const distB = Math.abs(bImg.getBoundingClientRect().top - a.getBoundingClientRect().top);
-                    return distA - distB;
-                })[0];
+                imgs.forEach(img => {
+                    const rect = img.getBoundingClientRect();
+                    const area = rect.width * rect.height;
 
-                if (closest) {
-                    // Only accept if it's visually close (within 300px)
-                    const dist = Math.abs(closest.getBoundingClientRect().top - a.getBoundingClientRect().top);
-                    if (dist < 300 && closest.width > 40) {
-                        const src = closest.currentSrc || closest.src;
-                        if (src) image = getAbsoluteUrl(src);
+                    // Skip tiny icons (must be at least 40x40)
+                    if (rect.width < 40 || rect.height < 40) return;
+
+                    if (area > maxArea) {
+                        const src = img.currentSrc || img.src || img.getAttribute('data-src');
+                        if (src && !src.includes('svg') && !src.startsWith('data:')) {
+                            maxArea = area;
+                            image = getAbsoluteUrl(src);
+                        }
+                    }
+                });
+
+                // Fallback: Background Image with largest area? 
+                // (Harder to calc area for BG, so we stick to 'has BG image')
+                if (!image) {
+                    const elems = [bestContainer, ...bestContainer.querySelectorAll('div, span, a')];
+                    for (let el of elems) {
+                        const style = window.getComputedStyle(el);
+                        if (style.backgroundImage && style.backgroundImage !== 'none') {
+                            const match = style.backgroundImage.match(/url\(["']?([^"']*)["']?\)/);
+                            if (match && match[1] && !match[1].includes('gradient')) {
+                                image = getAbsoluteUrl(match[1]);
+                                break;
+                            }
+                        }
                     }
                 }
             }
